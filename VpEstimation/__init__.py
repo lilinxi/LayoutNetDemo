@@ -2,7 +2,7 @@ import CoordsTransfrom
 import Projection
 import numpy as np
 import cv2
-import logging
+import time
 
 
 def __SolidAngleSegmentation(segmentationShape=(10, 20)):
@@ -57,7 +57,7 @@ def __GetOrthogonalVps(vps):
     找到两个方向的灭点，计算第三个方向的灭点
     """
     if len(vps) < 2:
-        logging.error("vps not enough")
+        print("vps not enough")
         exit(-1)
 
     # find orthogonalVpX
@@ -72,7 +72,7 @@ def __GetOrthogonalVps(vps):
         vpXErrs.append(errSum)
     vpXIndex = vpXErrs.index(min(vpXErrs))
     orthogonalVpX = vps[vpXIndex]
-    logging.info("X", orthogonalVpX)
+    print("Vp-X", orthogonalVpX)
 
     # find orthogonalVpY
     # 与第一个灭点垂直 err 最小的作为第二个灭点
@@ -82,12 +82,12 @@ def __GetOrthogonalVps(vps):
         vpYErrs.append(abs(err))
     vpYIndex = vpYErrs.index(min(vpYErrs))
     orthogonalVpY = vps[vpYIndex]
-    logging.info("Y", orthogonalVpY)
+    print("Vp-Y", orthogonalVpY)
 
     # compute orthogonalVpZ
     # 两个灭点叉乘，计算第三个灭点
     orthogonalVpZ = np.cross(orthogonalVpX, orthogonalVpY)
-    logging.info("Z", orthogonalVpZ)
+    print("Vp-Z", orthogonalVpZ)
 
     return [
         orthogonalVpX,
@@ -119,7 +119,7 @@ def HoughVpEstimation(panoImage,
     # 计算投影图
     projectImageAndMappings = Projection.ARoundProjection(panoImage, projectScale)
     for i in range(len(projectImageAndMappings)):
-        logging.info("project", i)
+        print("project-line", i)
         projectImage = projectImageAndMappings[i][0]
         mapping = projectImageAndMappings[i][1]
         scalemapping = projectImageAndMappings[i][2]
@@ -129,6 +129,9 @@ def HoughVpEstimation(panoImage,
         lines = fld.detect(grayImage)
         if lines is None:
             continue
+        # TODO Debug
+        # DrawPanoLine(panoImage, lines, scalemapping, (0, 255, 0))
+        # goodLines = []
         for line in lines:
             x0 = line[0][0]
             y0 = line[0][1]
@@ -144,12 +147,13 @@ def HoughVpEstimation(panoImage,
                 continue
             if abs(dy / dx) > 10:
                 continue
+            # goodLines.append(line)
             # step2. 从投影 xy 坐标映射回全景图 uv 坐标
             u0, v0 = mapping(x0, y0)
             u1, v1 = mapping(x1, y1)
             # step3. 由线段两个端点和球心计算直线所在大圆的 normal
-            xa, ya, za = CoordsTransfrom.uv2xyz(x0, y0)
-            xb, yb, zb = CoordsTransfrom.uv2xyz(x1, y1)
+            xa, ya, za = CoordsTransfrom.uv2xyz(u0, v0)
+            xb, yb, zb = CoordsTransfrom.uv2xyz(u1, v1)
             a = np.array([xa, ya, za])
             b = np.array([xb, yb, zb])
             normal = np.cross(a, b)
@@ -181,6 +185,8 @@ def HoughVpEstimation(panoImage,
             # 叠加投票
             panoImageVpsAll = panoImageVpsAll + panoImageVpsSelect
 
+        # DrawPanoLine(panoImage, goodLines, scalemapping, (0, 255, 0), sampleRate=1.1)
+
     # TODO Trick 将 Segmentation 水平划分为 10 部分，防止只检测出最大值的灭点，而忽略极大值的灭点
     splitSize = 10
     step = round(segmentationShape[1] / splitSize)
@@ -189,19 +195,24 @@ def HoughVpEstimation(panoImage,
         splitMax.append(max(panoImageVpsAll[:, i * step:(i + 1) * step].flat))
 
     # TODO Trick 一般会有两个效果最好的灭点，先将其去掉求平均值，大于平均值的可以认为存在灭点的概率很大
+    print("splitMax", splitMax)
     splitMax = np.sort(splitMax)
+    splitMax[7] = splitMax[0]  # dataset-good-21, 不多去一个就会检测不到正交灭点，多的灭点可以筛出去
     splitMax[8] = splitMax[0]
     splitMax[9] = splitMax[0]
     splitMaxAvg = np.sum(splitMax) / 10
+    print("splitMaxAvg", splitMaxAvg)
     for i in range(splitSize):
         maxValue = max(panoImageVpsAll[:, i * step:(i + 1) * step].flat)
         if maxValue > splitMaxAvg:
+            print("max", i)
             panoImageVpsAll[:, i * step:(i + 1) * step] = panoImageVpsAll[:, i * step:(i + 1) * step] / maxValue
         else:
             panoImageVpsAll[:, i * step:(i + 1) * step] = panoImageVpsAll[:, i * step:(i + 1) * step] / splitMaxAvg
 
     # 灭点都被归一化到了 1.0
     vps = np.where((0.99 < panoImageVpsAll))
+    print("vps", vps)
     sphereVps = []
     # 取值 Segmentation 的中心作为灭点
     for i in range(len(vps[0])):
@@ -210,8 +221,24 @@ def HoughVpEstimation(panoImage,
         phi, theta = segmentation2phi_theta(segmentationI, segmentationJ)
         x, y, z = CoordsTransfrom.phi_theta2xyz(phi, theta)
         sphereVps.append(np.array([x, y, z]))
+        print("segmentation", phi, theta, "->", x, y, z)
 
+    print("sphereVps", sphereVps)
     orthogonalVps = __GetOrthogonalVps(sphereVps)
+
+    # TODO Debug
+    # for vp in orthogonalVps:
+    #     x, y = CoordsTransfrom.xyz2xy(vp[0], vp[1], vp[2], panoImage.shape)
+    #     cv2.circle(panoImage, (x, y), 20, (0, 0, 0), -1)
+    # cv2.imshow("debug", panoImage)
+    # cv2.waitKey(0)
+
+    # TODO Debug
+    panoImageVpsAll = panoImageVpsAll * 255
+    panoImageVpsAll.astype(np.uint8)
+    cv2.imwrite("../output/output_pano_line_index_0_canny_debug_" + str(time.time()) + ".jpg", panoImageVpsAll)
+    # cv2.imshow("debug", panoImageVpsAll)
+    # cv2.waitKey(0)
 
     return orthogonalVps
 
@@ -224,10 +251,10 @@ def GetLineIndex(line, mapping, orthogonalVps):
     y0 = line[0][1]
     x1 = line[0][2]
     y1 = line[0][3]
-    u0, u0 = mapping(x0, y0)
-    u1, u1 = mapping(x1, y1)
-    xa, ya, za = CoordsTransfrom.uv2xyz(u0, u0)
-    xb, yb, zb = CoordsTransfrom.uv2xyz(u1, u1)
+    u0, v0 = mapping(x0, y0)
+    u1, v1 = mapping(x1, y1)
+    xa, ya, za = CoordsTransfrom.uv2xyz(u0, v0)
+    xb, yb, zb = CoordsTransfrom.uv2xyz(u1, v1)
     a = np.array([xa, ya, za])
     b = np.array([xb, yb, zb])
     normal = np.cross(a, b)
@@ -240,11 +267,13 @@ def GetLineIndex(line, mapping, orthogonalVps):
 
     errSort = np.sort(errs)
     # 第二误差仍然很大，说明直线朝向灭点较为可信，否则无法判断
-    if errSort[1] > 0.01:
+    # Trick, dataset-good-1 房顶测试出来的 2.0 阈值
+    if errSort[1] > 2 * errSort[0]:
         lineIndex = errs.index(min(errs))
     else:
         lineIndex = -1  # 无法判断
 
+    # print(errs, lineIndex)
     return lineIndex
 
 
@@ -257,9 +286,10 @@ def DrawPanoLineWithIndex(panoImage, projectScale=600, sampleRate=1.1):
     # 输出
     panoLineWithIndex = np.zeros(panoImage.shape, dtype=np.uint8)
     # 计算灭点投影图
-    projectImageAndMappings = Projection.OrthogonalVpsProjection(panoImage, projectScale, orthogonalVps)
+    # projectImageAndMappings = Projection.OrthogonalVpsProjection(panoImage, projectScale, orthogonalVps)
+    projectImageAndMappings = Projection.ARoundProjection(panoImage, projectScale)
     for i in range(len(projectImageAndMappings)):
-        logging.info("project", i)
+        print("project-line", i)
         projectImage = projectImageAndMappings[i][0]
         mapping = projectImageAndMappings[i][1]
         scalemapping = projectImageAndMappings[i][2]
@@ -298,3 +328,31 @@ def DrawPanoLineWithIndex(panoImage, projectScale=600, sampleRate=1.1):
                 cv2.circle(panoLineWithIndex, (mx, my), 1, bgr, -1)
 
     return panoLineWithIndex
+
+
+def DrawPanoLine(panoImage, lines, scalemapping, bgr, sampleRate=1.1):
+    """
+    在全景图中绘制投影直线
+    :param panoImage:       全景图
+    :param lines:           投影直线
+    :param scalemapping:    投影图到全景图的映射（带scale）
+    :param bgr:             颜色
+    :param sampleRate:      绘制直线的采样率
+    """
+    for line in lines:
+        x0 = line[0][0]
+        y0 = line[0][1]
+        x1 = line[0][2]
+        y1 = line[0][3]
+        dx = x1 - x0
+        dy = y1 - y0
+
+        mx0, my0 = scalemapping(x0, y0)
+        mx1, my1 = scalemapping(x1, y1)
+        samples = round(max(abs(mx0 - mx1), abs(my0 - my1)) * sampleRate)
+
+        for dt in np.linspace(0, 1, samples):
+            x = x0 + dt * dx
+            y = y0 + dt * dy
+            mx, my = scalemapping(x, y)
+            cv2.circle(panoImage, (mx, my), 1, bgr, -1)

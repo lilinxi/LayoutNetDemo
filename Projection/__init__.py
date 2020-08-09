@@ -1,6 +1,5 @@
 import CoordsTransfrom
 import numpy as np
-import logging
 
 
 def __Projection(panoImage, projectScale, genRay):
@@ -69,7 +68,7 @@ def __RayProjection(panoImage, projectScale, xyz):
     """
     normal = np.array(xyz)
     v1, v2 = BuildCoords(normal)
-    rotateMat = np.array([normal, v1, v2]).T  # 将 ray(x,y,z) 的中心旋转到 (1,0,0) 的旋转矩阵
+    rotateMat = np.array([normal, v1, v2]).T  # 将 ray(x,y,z) 的中心旋转到 (1,0,0) 的旋转矩阵，正反没有关系，只要 mapping 是匹配的就可以
     # for du in np.linspace(1, -1, projectScale):  # 列从上到下
     # for dv in np.linspace(-1, 1, projectScale):  # 第一行
     genRay = lambda u, v: rotateMat.dot(np.array([1, v, u]))
@@ -86,9 +85,14 @@ def ARoundProjection(panoImage, projectScale):
         [-1, 0, 0],
         [0, 1, 0],
         [0, -1, 0],
+        # [0, 0, 1],
+        # [0, 0, -1],
     ]:
-        logging.info("xyz", xyz)
+        print("project-xyz", xyz)
         projectImage, mapping, scalemapping = __RayProjection(panoImage, projectScale, xyz)
+        # import cv2
+        # cv2.imshow("debug", projectImage)
+        # cv2.waitKey(0)
         ret.append([projectImage, mapping, scalemapping])
 
     return ret
@@ -100,10 +104,18 @@ def OrthogonalVpsProjection(panoImage, projectScale, orthogonalVps):
     """
     ret = []
     for vp in orthogonalVps:
-        logging.info("vp", vp)
+        print("project-vp", vp)
+
         projectImage, mapping, scalemapping = __RayProjection(panoImage, projectScale, vp)
         ret.append([projectImage, mapping, scalemapping])
+        # import cv2
+        # cv2.imshow("debug", projectImage)
+        # cv2.waitKey(0)
+
         projectImage, mapping, scalemapping = __RayProjection(panoImage, projectScale, -vp)
         ret.append([projectImage, mapping, scalemapping])
+        # import cv2
+        # cv2.imshow("debug", projectImage)
+        # cv2.waitKey(0)
 
-    pass
+    return ret
