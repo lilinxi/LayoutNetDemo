@@ -3,13 +3,13 @@ import cv2
 
 canny = False
 
-# canny = True
+canny = True
 
 demo = "output_pano_line_index_"
 batch = "2"
 
 if canny:
-    panoImage = cv2.imread("../dataset-good/dataset-" + str(21) + ".jpg", cv2.IMREAD_COLOR)
+    panoImage = cv2.imread("../dataset-good/dataset-" + str(0) + ".jpg", cv2.IMREAD_COLOR)
     print(panoImage.shape)
     panoLineIndex = VpEstimation.DrawPanoLineWithIndex(panoImage)
     cv2.imwrite("../output/" + demo + "0_canny.jpg", panoLineIndex)
