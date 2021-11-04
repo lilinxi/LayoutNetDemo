@@ -90,9 +90,9 @@ def ARoundProjection(panoImage, projectScale):
     ]:
         print("project-xyz", xyz)
         projectImage, mapping, scalemapping = __RayProjection(panoImage, projectScale, xyz)
-        # import cv2
-        # cv2.imshow("debug", projectImage)
-        # cv2.waitKey(0)
+        import cv2
+        cv2.imshow("debug", projectImage)
+        cv2.waitKey(0)
         ret.append([projectImage, mapping, scalemapping])
 
     return ret
@@ -119,3 +119,10 @@ def OrthogonalVpsProjection(panoImage, projectScale, orthogonalVps):
         # cv2.waitKey(0)
 
     return ret
+
+
+if __name__ == '__main__':
+    import cv2
+
+    input_pano = cv2.imread("./example.jpg")
+    ARoundProjection(input_pano, 600)
